@@ -30,8 +30,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Autowired
     private JwtTokenProvider tokenProvider;
 
-    @Value("${jwt.cookie-name}")
-    private String jwtCookieName;
 
     // Optional: If you have a CustomUserDetailsService to load user details from DB
     // @Autowired
@@ -41,31 +39,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         try {
-            String jwt = getJwtFromCookie(request);
+            String jwt = getJwtFromRequest(request); // Đọc từ Header
 
             if (StringUtils.hasText(jwt) && tokenProvider.validateToken(jwt)) {
-                String username = tokenProvider.getUsernameFromJWT(jwt); // e.g., email
+                String username = tokenProvider.getUsernameFromJWT(jwt);
+                List<GrantedAuthority> authorities = Collections.emptyList(); // Giữ đơn giản
 
-                // If you store roles in JWT, you can extract them:
-                // Claims claims = tokenProvider.getAllClaimsFromToken(jwt);
-                // List<String> roles = claims.get("roles", List.class);
-                // List<GrantedAuthority> authorities = roles != null ?
-                //         roles.stream().map(SimpleGrantedAuthority::new).collect(Collectors.toList()) :
-                //         Collections.emptyList();
-                List<GrantedAuthority> authorities = Collections.emptyList(); // Keep it simple for now
-
-                // If using CustomUserDetailsService:
-                // UserDetails userDetails = customUserDetailsService.loadUserByUsername(username);
-                // UsernamePasswordAuthenticationToken authentication =
-                //        new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
-
-                // Simpler authentication object without UserDetails (principal is username/email)
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(username, null, authorities);
 
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
-                logger.debug("Set Authentication for user: {}", username);
+                logger.debug("Set Authentication for user: {} from Bearer token", username);
             }
         } catch (Exception ex) {
             logger.error("Could not set user authentication in security context", ex);
@@ -74,7 +59,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    private String getJwtFromCookie(HttpServletRequest request) {
-        Cookie cookie = WebUtils.getCookie(request, jwtCookieName);
-        return cookie != null ? cookie.getValue() : null;
-    }}
+    private String getJwtFromRequest(HttpServletRequest request) {
+        String bearerToken = request.getHeader("Authorization");
+        if (StringUtils.hasText(bearerToken) && bearerToken.startsWith("Bearer ")) {
+            return bearerToken.substring(7);
+        }
+        return null;
+    }
+}

@@ -16,8 +16,4 @@ spring:
             redirect-uri: http://localhost:8083/login/oauth2/code/google
 jwt:
   secret: ${JWT_SECRET_KEY}
-  cookie-name: accessToken
   expiration: 86400000
-
-app:
-  redirect-uri: http://localhost:8083/login-success.html

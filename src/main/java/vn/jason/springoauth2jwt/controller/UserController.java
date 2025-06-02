@@ -23,79 +23,51 @@ import java.util.HashMap;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api")
+@RequestMapping("/api/user")
 public class UserController {
 
     private static final Logger logger = LoggerFactory.getLogger(UserController.class);
 
-    @Value("${jwt.cookie-name}")
-    private String jwtCookieName;
 
-    @Value("${server.servlet.session.cookie.secure}")
-    private boolean useSecureCookie;
 
     @Autowired
     private JwtTokenProvider tokenProvider; // Inject if you need to read claims directly for /me
 
-    @GetMapping("/user/me")
+    @GetMapping("/me")
     public ResponseEntity<?> getCurrentUser(@AuthenticationPrincipal Object principal, HttpServletRequest request) {
-        // @AuthenticationPrincipal will inject the principal set by JwtAuthenticationFilter (which is username/email)
-        // Or you can get it from SecurityContextHolder
+
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-        if (authentication == null || !authentication.isAuthenticated() || "anonymousUser".equals(authentication.getPrincipal())) {
-            return ResponseEntity.status(401).body("User not authenticated");
+        logger.info("Current user authentication: {}", authentication);
+        logger.info("Current user principal: {}", principal);
+        if (authentication == null || !authentication.isAuthenticated()) {
+            logger.warn("No authenticated user found in the security context.");
+            return ResponseEntity.status(401).body("Unauthorized");
         }
-
-        // For simple principal (String - email)
-        if (principal instanceof String) {
-            // If you need more details than just the email, and those details are in the JWT claims:
+        if(principal instanceof String) {
+            String bearerToken = request.getHeader("Authorization");
             String jwt = null;
-            Cookie[] cookies = request.getCookies();
-            if (cookies != null) {
-                for (Cookie cookie : cookies) {
-                    if (jwtCookieName.equals(cookie.getName())) {
-                        jwt = cookie.getValue();
-                        break;
-                    }
-                }
+            if (bearerToken != null && bearerToken.startsWith("Bearer ")) {
+                jwt = bearerToken.substring(7);
             }
-
-            if (jwt != null && tokenProvider.validateToken(jwt)) {
+            if (jwt != null && tokenProvider.validateToken(jwt)) { // tokenProvider vẫn cần thiết
                 Claims claims = tokenProvider.getAllClaimsFromToken(jwt);
                 Map<String, Object> userDetails = new HashMap<>();
-                userDetails.put("subject", claims.getSubject());
+                userDetails.put("subject", claims.getSubject()); // Chính là principal (username/email)
                 userDetails.put("name", claims.get("name"));
                 userDetails.put("email", claims.get("email"));
                 userDetails.put("picture", claims.get("picture"));
-                // Add any other claims you put in the token
                 return ResponseEntity.ok(userDetails);
             }
-            // Fallback if claims cannot be read but principal is there
             return ResponseEntity.ok(Map.of("username", principal));
         }
-
-        // If OAuth2User is somehow still the principal (less likely after JWT filter)
-        if (principal instanceof OAuth2User) {
-            OAuth2User oauth2User = (OAuth2User) principal;
-            return ResponseEntity.ok(oauth2User.getAttributes());
-        }
-
         return ResponseEntity.ok(Map.of("principal", principal != null ? principal.toString() : "N/A"));
     }
 
 
     @PostMapping("/auth/logout")
     public ResponseEntity<?> logout(HttpServletResponse response) {
-        logger.info("Processing logout request");
-        Cookie cookie = new Cookie(jwtCookieName, null);
-        cookie.setPath("/");
-        cookie.setHttpOnly(true);
-        cookie.setSecure(useSecureCookie);
-        cookie.setMaxAge(0); // Expire the cookie immediately
-
-        response.addCookie(cookie);
-        logger.info("JWT cookie '{}' cleared for logout.", jwtCookieName);
-        return ResponseEntity.ok("Logout successful. Please clear any local state if you are a frontend client.");
+        logger.info("Processing logout request (dev mode - Bearer token)");
+        SecurityContextHolder.clearContext(); // Xóa context bảo mật phía server cho request hiện tại
+        return ResponseEntity.ok("Logout successful. Client should discard the JWT.");
     }
 }

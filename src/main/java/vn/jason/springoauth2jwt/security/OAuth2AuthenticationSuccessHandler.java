@@ -1,5 +1,6 @@
 package vn.jason.springoauth2jwt.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -14,6 +15,8 @@ import org.springframework.security.web.authentication.SimpleUrlAuthenticationSu
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 @Component
@@ -22,23 +25,15 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
     private static final Logger logger = LoggerFactory.getLogger(OAuth2AuthenticationSuccessHandler.class);
 
     private final JwtTokenProvider tokenProvider;
-    private final String frontendRedirectUri;
-    private final String jwtCookieName;
-    private final long jwtExpirationMs;
+
 
     @Value("${server.servlet.session.cookie.secure}")
     private boolean useSecureCookie;
 
     @Autowired
-    public OAuth2AuthenticationSuccessHandler(JwtTokenProvider tokenProvider,
-                                              @Value("${app.redirect-uri}") String frontendRedirectUri,
-                                              @Value("${jwt.cookie-name}") String jwtCookieName,
-                                              @Value("${jwt.expiration}") long jwtExpirationMs) {
+    public OAuth2AuthenticationSuccessHandler(JwtTokenProvider tokenProvider) {
         this.tokenProvider = tokenProvider;
-        this.frontendRedirectUri = frontendRedirectUri;
-        this.jwtCookieName = jwtCookieName;
-        this.jwtExpirationMs = jwtExpirationMs;
-        setDefaultTargetUrl(frontendRedirectUri); // Set default target URL for redirection
+
     }
 
     @Override
@@ -53,29 +48,25 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
             // Then, you might want to include your internal user ID or roles in the JWT.
 
             String jwt = tokenProvider.generateToken(oauth2User);
+            logger.info("Generated JWT for dev: {}", jwt);
 
-            Cookie jwtCookie = new Cookie(jwtCookieName, jwt);
-            jwtCookie.setHttpOnly(true);
-            jwtCookie.setSecure(useSecureCookie); // Set based on profile/environment
-            jwtCookie.setPath("/");
-            jwtCookie.setMaxAge((int) TimeUnit.MILLISECONDS.toSeconds(jwtExpirationMs));
-            // jwtCookie.setSameSite("Lax"); // Consider explicit SameSite, though Spring Boot 3+ defaults to Lax
-
-            response.addCookie(jwtCookie);
-            logger.info("JWT cookie '{}' set. Redirecting to: {}", jwtCookieName, frontendRedirectUri);
-
-            // Instead of returning JSON, we redirect as per SimpleUrlAuthenticationSuccessHandler
-            getRedirectStrategy().sendRedirect(request, response, determineTargetUrl(request, response, authentication));
+            response.setContentType("application/json");
+            response.setCharacterEncoding("UTF-8");
+            Map<String, Object> responseBody = new HashMap<>();
+            responseBody.put("message", "OAuth2 authentication successful. JWT provided below.");
+            responseBody.put("accessToken", jwt);
+            Map<String,Object> userAttributes = oauth2User.getAttributes();
+            responseBody.put("userAttributes", userAttributes);
+            ObjectMapper objectMapper = new ObjectMapper();
+            response.getWriter().write(objectMapper.writeValueAsString(responseBody));
+            response.setStatus(HttpServletResponse.SC_OK);
 
         } else {
-            logger.warn("OAuth2 Principal is not an instance of OAuth2User: {}", authentication.getPrincipal().getClass());
-            super.onAuthenticationSuccess(request, response, authentication); // Fallback to default behavior
+            logger.warn("OAuth2 Principal is not an instance of OAuth2User: {}", authentication.getPrincipal().getClass().getName());
+            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            response.setContentType("application/json");
+            response.setCharacterEncoding("UTF-8");
+            response.getWriter().write("{\"error\":\"Authentication failed: Principal is not OAuth2User\"}");
         }
-    }
-
-    @Override
-    protected String determineTargetUrl(HttpServletRequest request, HttpServletResponse response, Authentication authentication) {
-        // You can add logic here to customize the target URL based on roles or other attributes if needed
-        return frontendRedirectUri;
     }
 }

@@ -1,0 +1,23 @@
+server:
+  port: 8083
+  servlet:
+    session:
+      cookie:
+        secure: false
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${YOUR_GOOGLE_CLIENT_ID}
+            client-secret: ${YOUR_GOOGLE_CLIENT_SECRET}
+            scope: openid, profile, email
+            redirect-uri: http://localhost:8083/login/oauth2/code/google
+jwt:
+  secret: ${JWT_SECRET_KEY}
+  cookie-name: accessToken
+  expiration: 86400000
+
+app:
+  redirect-uri: http://localhost:8083/login-success.html
